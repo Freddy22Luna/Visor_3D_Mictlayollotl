@@ -1,0 +1,420 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quetzalcoatl - Visor 3D</title>
+
+    <style>
+        body {
+            margin: 0;
+            background: #071b17;
+            color: #e8c16c;
+            font-family: Arial, sans-serif;
+            text-align: center;
+            overflow: hidden;
+        }
+
+        h1 {
+            margin: 12px;
+            font-size: 24px;
+            letter-spacing: 3px;
+        }
+
+        canvas {
+            display: block;
+            margin: auto;
+            max-width: 100vw;
+            max-height: calc(100vh - 60px);
+        }
+    </style>
+</head>
+
+<body>
+    <h1>QUETZALCÓATL 3D</h1>
+
+    <canvas id="lienzo" width="800" height="650"></canvas>
+
+    <script>
+        const canvas = document.getElementById("lienzo");
+        const context = canvas.getContext("2d");
+
+        let angulo = 0;
+
+        // =====================================
+        // 1. MODELO CON VÉRTICES Y CARAS
+        // =====================================
+
+        const vertices = [];
+        const caras = [];
+
+        function vertice(x, y, z) {
+            vertices.push({ x, y, z });
+            return vertices.length - 1;
+        }
+
+        function cara(a, b, c, color) {
+            caras.push({ vertices: [a, b, c], color });
+        }
+
+        // Crea una superficie con dos triángulos
+        function quad(a, b, c, d, color) {
+            cara(a, b, c, color);
+            cara(a, c, d, color);
+        }
+
+        // Esfera construida con caras triangulares
+        function crearEsfera(cx, cy, cz, rx, ry, rz, color) {
+            const anillos = 7;
+            const segmentos = 12;
+            const indice = [];
+
+            for (let i = 0; i <= anillos; i++) {
+                const fila = [];
+
+                const latitud = -Math.PI / 2 +
+                    Math.PI * i / anillos;
+
+                for (let j = 0; j <= segmentos; j++) {
+                    const longitud = 2 * Math.PI * j / segmentos;
+
+                    fila.push(vertice(
+                        cx + rx * Math.cos(latitud) * Math.cos(longitud),
+                        cy + ry * Math.sin(latitud),
+                        cz + rz * Math.cos(latitud) * Math.sin(longitud)
+                    ));
+                }
+
+                indice.push(fila);
+            }
+
+            for (let i = 0; i < anillos; i++) {
+                for (let j = 0; j < segmentos; j++) {
+                    quad(
+                        indice[i][j],
+                        indice[i][j + 1],
+                        indice[i + 1][j + 1],
+                        indice[i + 1][j],
+                        color
+                    );
+                }
+            }
+        }
+
+        // Prisma triangular para colmillos y adornos
+        function crearPunta(base, punta, radio, color) {
+            const [x, y, z] = base;
+            const [px, py, pz] = punta;
+            const a = vertice(x - radio, y, z);
+            const b = vertice(x + radio, y, z);
+            const c = vertice(x, y, z + radio);
+            const d = vertice(px, py, pz);
+
+            cara(a, b, d, color);
+            cara(b, c, d, color);
+            cara(c, a, d, color);
+        }
+
+        // =====================================
+        // 2. CUERPO SERPENTINO
+        // =====================================
+
+        const ruta = [
+            [-0.3, -0.2, 0],
+            [-1.1, -0.6, 0],
+            [-1.8, -1.4, 0],
+            [-1.5, -2.1, 0],
+            [-0.6, -2.4, 0],
+            [0.3, -2.0, 0],
+            [0.5, -1.3, 0],
+            [-0.2, -1.0, 0],
+            [-0.8, -1.4, 0],
+            [-0.5, -1.9, 0],
+            [0.4, -1.8, 0],
+            [1.0, -1.1, 0],
+            [1.0, -0.3, 0],
+            [0.5, 0.2, 0]
+        ];
+
+        // Tubo de caras alrededor de la curva
+        function crearCuerpo(puntos, radio, color) {
+            const anillos = [];
+            const lados = 8;
+
+            for (let i = 0; i < puntos.length; i++) {
+                const p = puntos[i];
+                const anterior = puntos[Math.max(0, i - 1)];
+                const siguiente = puntos[Math.min(puntos.length - 1, i + 1)];
+
+                const dx = siguiente[0] - anterior[0];
+                const dy = siguiente[1] - anterior[1];
+                const longitud = Math.hypot(dx, dy) || 1;
+
+                const nx = -dy / longitud;
+                const ny = dx / longitud;
+                const anillo = [];
+
+                for (let j = 0; j < lados; j++) {
+                    const a = 2 * Math.PI * j / lados;
+
+                    anillo.push(vertice(
+                        p[0] + nx * radio * Math.cos(a),
+                        p[1] + ny * radio * Math.cos(a),
+                        p[2] + radio * Math.sin(a)
+                    ));
+                }
+
+                anillos.push(anillo);
+            }
+
+            for (let i = 0; i < anillos.length - 1; i++) {
+                for (let j = 0; j < lados; j++) {
+                    const k = (j + 1) % lados;
+
+                    quad(
+                        anillos[i][j],
+                        anillos[i][k],
+                        anillos[i + 1][k],
+                        anillos[i + 1][j],
+                        (i + j) % 4 === 0 ? "#15945c" : color
+                    );
+                }
+            }
+        }
+
+        crearCuerpo(ruta, 0.22, "#08794c");
+
+        // =====================================
+        // 3. ALAS CON PLUMAS GEOMÉTRICAS
+        // =====================================
+
+        function crearPluma(x, y, z, largo, ancho, inclinacion, color) {
+            const dx = Math.sin(inclinacion) * largo;
+            const dy = Math.cos(inclinacion) * largo;
+
+            const a = vertice(x, y, z);
+            const b = vertice(
+                x - ancho / 2, y + largo * 0.35, z + 0.06
+            );
+            const c = vertice(
+                x + dx, y + dy, z
+            );
+            const d = vertice(
+                x + ancho / 2, y + largo * 0.35, z - 0.06
+            );
+
+            cara(a, b, c, color);
+            cara(a, c, d, color);
+
+            // Línea central que simula el raquis de la pluma
+            const e = vertice(
+                x + dx * 0.5, y + dy * 0.5, z + 0.02
+            );
+            cara(a, e, c, "#75c985");
+        }
+
+        function crearAla(lado) {
+            // Brazo del ala
+            const a = vertice(0, 0.1, -0.15);
+            const b = vertice(lado * 1.3, 0.8, -0.1);
+            const c = vertice(lado * 2.2, 0.5, -0.1);
+            const d = vertice(lado * 0.7, -0.3, -0.1);
+
+            quad(a, b, c, d, "#075c3d");
+
+            // Abanico de plumas
+            for (let i = 0; i < 12; i++) {
+                const t = i / 11;
+                const x = lado * (0.15 + t * 1.8);
+                const y = 0.2 + Math.sin(t * Math.PI) * 0.45;
+
+                crearPluma(
+                    x, y, 0.05,
+                    1.05 - t * 0.20,
+                    0.28,
+                    lado * (-0.65 + t * 0.55),
+                    i % 2 === 0 ? "#13945a" : "#08794c"
+                );
+
+                crearPluma(
+                    x + lado * 0.12, y - 0.12, 0.15,
+                    0.80,
+                    0.20,
+                    lado * (-0.85 + t * 0.5),
+                    i % 2 === 0 ? "#e52b3e" : "#b90f2c"
+                );
+            }
+
+            // Plumas interiores
+            for (let i = 0; i < 7; i++) {
+                const t = i / 6;
+
+                crearPluma(
+                    lado * (0.2 + t * 1.15),
+                    0.05 - t * 0.12,
+                    0.25,
+                    0.65,
+                    0.18,
+                    lado * (-0.9 + t * 0.6),
+                    "#1eaa69"
+                );
+            }
+        }
+
+        crearAla(-1);
+        crearAla(1);
+
+        // =====================================
+        // 4. CABEZA DE SERPIENTE
+        // =====================================
+
+        crearEsfera(0.65, 0.42, 0, 0.48, 0.39, 0.35, "#08794c");
+
+        // Hocico
+        crearEsfera(1.02, 0.25, 0, 0.40, 0.19, 0.28, "#15945c");
+
+        // Mandíbula
+        crearEsfera(1.00, 0.08, 0, 0.34, 0.10, 0.25, "#064038");
+
+        // Ojos
+        crearEsfera(0.58, 0.47, 0.31, 0.12, 0.12, 0.07, "#e9bd55");
+        crearEsfera(0.61, 0.47, 0.37, 0.055, 0.08, 0.035, "#101b18");
+
+        crearEsfera(0.58, 0.47, -0.31, 0.12, 0.12, 0.07, "#e9bd55");
+        crearEsfera(0.61, 0.47, -0.37, 0.055, 0.08, 0.035, "#101b18");
+
+        // Fosas nasales
+        crearEsfera(1.27, 0.31, 0.16, 0.045, 0.035, 0.025, "#10251c");
+        crearEsfera(1.27, 0.31, -0.16, 0.045, 0.035, 0.025, "#10251c");
+
+        // Colmillos
+        crearPunta([0.92, 0.13, 0.22], [1.00, -0.12, 0.22], 0.07, "#fff0cc");
+        crearPunta([0.92, 0.13, -0.22], [1.00, -0.12, -0.22], 0.07, "#fff0cc");
+
+        // =====================================
+        // 5. CRESTA Y ADORNOS
+        // =====================================
+
+        for (let i = 0; i < 9; i++) {
+            crearPluma(
+                0.25 + i * 0.08,
+                0.60,
+                0,
+                0.75 + (i % 3) * 0.15,
+                0.20,
+                -0.55 + i * 0.12,
+                i % 2 === 0 ? "#e52b3e" : "#13945a"
+            );
+        }
+
+        // Corona dorada
+        crearEsfera(0.47, 0.68, 0, 0.22, 0.09, 0.22, "#e9bd55");
+
+        // Piezas ornamentales
+        crearEsfera(0.30, 0.25, 0.34, 0.09, 0.09, 0.05, "#e9bd55");
+        crearEsfera(0.30, 0.25, -0.34, 0.09, 0.09, 0.05, "#e9bd55");
+
+        // =====================================
+        // 6. ROTACIONES Y PROYECCIÓN
+        // =====================================
+
+        function rotarY(p, a) {
+            const cos = Math.cos(a);
+            const sin = Math.sin(a);
+
+            return {
+                x: p.x * cos + p.z * sin,
+                y: p.y,
+                z: -p.x * sin + p.z * cos
+            };
+        }
+
+        function rotarX(p, a) {
+            const cos = Math.cos(a);
+            const sin = Math.sin(a);
+
+            return {
+                x: p.x,
+                y: p.y * cos - p.z * sin,
+                z: p.y * sin + p.z * cos
+            };
+        }
+
+        function proyectar(p) {
+            const distancia = 8;
+            const zoom = 180;
+            const z = p.z + distancia;
+
+            return {
+                x: (p.x / z) * zoom + canvas.width / 2,
+                y: (-p.y / z) * zoom + canvas.height / 2,
+                z: z
+            };
+        }
+
+        // =====================================
+        // 7. DIBUJO DE LAS CARAS CON PROFUNDIDAD
+        // =====================================
+
+        function dibujar() {
+            context.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Fondo con degradado
+            const fondo = context.createLinearGradient(
+                0, 0, canvas.width, canvas.height
+            );
+            fondo.addColorStop(0, "#071b17");
+            fondo.addColorStop(1, "#123b2b");
+
+            context.fillStyle = fondo;
+            context.fillRect(0, 0, canvas.width, canvas.height);
+
+            const anguloY = angulo;
+            const anguloX = Math.sin(angulo * 0.5) * 0.20;
+
+            const puntos = vertices.map(v => {
+                let p = rotarY(v, anguloY);
+                p = rotarX(p, anguloX);
+                return proyectar(p);
+            });
+
+            // Ordenar las caras de atrás hacia delante
+            const carasOrdenadas = caras.map(c => {
+                const a = puntos[c.vertices[0]];
+                const b = puntos[c.vertices[1]];
+                const d = puntos[c.vertices[2]];
+
+                return {
+                    ...c,
+                    profundidad: (a.z + b.z + d.z) / 3
+                };
+            }).sort((a, b) => b.profundidad - a.profundidad);
+
+            for (const c of carasOrdenadas) {
+                const a = puntos[c.vertices[0]];
+                const b = puntos[c.vertices[1]];
+                const d = puntos[c.vertices[2]];
+
+                context.beginPath();
+                context.moveTo(a.x, a.y);
+                context.lineTo(b.x, b.y);
+                context.lineTo(d.x, d.y);
+                context.closePath();
+
+                context.fillStyle = c.color;
+                context.fill();
+
+                context.strokeStyle = c.color;
+                context.lineWidth = 0.5;
+                context.stroke();
+            }
+
+            angulo += 0.008;
+            requestAnimationFrame(dibujar);
+        }
+
+        dibujar();
+    </script>
+</body>
+</html>
