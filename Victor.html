@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visor 3D del paisaje</title>
+    <style>
+        body {
+            margin: 0;
+            background: #0a0a0a;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-family: system-ui, sans-serif;
+            color: #eee;
+            overflow: hidden;
+        }
+        h1 {
+            margin: 14px 0 8px;
+            font-size: 1.35rem;
+            letter-spacing: 0.5px;
+        }
+        #info {
+            font-size: 0.9rem;
+            color: #aaa;
+            margin-bottom: 10px;
+        }
+        canvas {
+            border-radius: 10px;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+            cursor: grab;
+        }
+        canvas:active {
+            cursor: grabbing;
+        }
+    </style>
+</head>
+<body>
+    <h1>Visor 3D del paisaje</h1>
+    <div id="info">Mueve el ratón para inclinar y explorar la escena en profundidad</div>
+    <canvas id="lienzo" width="1000" height="560"></canvas>
+
+    <script>
+        const canvas = document.getElementById("lienzo");
+        const ctx = canvas.getContext("2d");
+
+        // Posición del ratón normalizada (-1 a 1)
+        let mouseX = 0;
+        let mouseY = 0;
+        let targetX = 0;
+        let targetY = 0;
+
+        // Suavizado del movimiento
+        const suavizado = 0.08;
+
+        // Escuchar movimiento del ratón
+        canvas.addEventListener("mousemove", (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            // Convertimos a rango -1 ... 1
+            targetX = (x / canvas.width) * 2 - 1;
+            targetY = (y / canvas.height) * 2 - 1;
+        });
+
+        // También funciona con el dedo en móvil
+        canvas.addEventListener("touchmove", (e) => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            const touch = e.touches[0];
+            const x = touch.clientX - rect.left;
+            const y = touch.clientY - rect.top;
+            targetX = (x / canvas.width) * 2 - 1;
+            targetY = (y / canvas.height) * 2 - 1;
+        }, { passive: false });
+
+        // ========== FUNCIONES DE DIBUJO DEL PAISAJE ==========
+        function dibujarNube(x, y, escala, alpha = 1) {
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = "#5a5a5a";
+            ctx.beginPath();
+            ctx.ellipse(x, y, 55 * escala, 30 * escala, 0, 0, Math.PI * 2);
+            ctx.ellipse(x + 40 * escala, y - 10 * escala, 45 * escala, 26 * escala, 0, 0, Math.PI * 2);
+            ctx.ellipse(x - 35 * escala, y + 6 * escala, 38 * escala, 24 * escala, 0, 0, Math.PI * 2);
+            ctx.ellipse(x + 18 * escala, y + 14 * escala, 48 * escala, 22 * escala, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 1;
+        }
+
+        function dibujarPiramide2D(x, y, base, altura, color) {
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + base / 2, y - altura);
+            ctx.lineTo(x + base, y);
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        function dibujarPiramideTruncada(x, y, base, altura, techo, color) {
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + (base - techo) / 2, y - altura);
+            ctx.lineTo(x + (base + techo) / 2, y - altura);
+            ctx.lineTo(x + base, y);
+            ctx.closePath();
+            ctx.fill();
+
+            // Borde superior
+            ctx.strokeStyle = "#c48a3a";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(x + (base - techo) / 2, y - altura);
+            ctx.lineTo(x + (base + techo) / 2, y - altura);
+            ctx.stroke();
+        }
+
+        function dibujarArbusto(x, y, radio, color) {
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(x, y, radio * 0.7, 0, Math.PI * 2);
+            ctx.arc(x - radio * 0.5, y + 12, radio * 0.55, 0, Math.PI * 2);
+            ctx.arc(x + radio * 0.5, y + 10, radio * 0.6, 0, Math.PI * 2);
+            ctx.arc(x, y - radio * 0.35, radio * 0.5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        function dibujarFlor(x, y) {
+            ctx.fillStyle = "#e74c6f";
+            for (let i = 0; i < 5; i++) {
+                const a = (i / 5) * Math.PI * 2;
+                ctx.beginPath();
+                ctx.ellipse(x + Math.cos(a) * 9, y + Math.sin(a) * 9, 8, 5.5, a, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.fillStyle = "#f1c40f";
+            ctx.beginPath();
+            ctx.arc(x, y, 5.5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // ========== CAPAS CON PROFUNDIDAD (efecto 3D) ==========
+        function dibujarCapa(profundidad, dibujarContenido) {
+            // Cuanto mayor es la profundidad, más se mueve con el ratón
+            const desplazamientoX = mouseX * profundidad * 55;
+            const desplazamientoY = mouseY * profundidad * 30;
+
+            // Pequeña inclinación (rotación) según la posición del ratón
+            const inclinacion = mouseX * profundidad * 0.04;
+
+            ctx.save();
+            ctx.translate(canvas.width / 2 + desplazamientoX, canvas.height / 2 + desplazamientoY);
+            ctx.rotate(inclinacion);
+            ctx.translate(-canvas.width / 2, -canvas.height / 2);
+
+            dibujarContenido();
+
+            ctx.restore();
+        }
+
+        // ========== BUCLE PRINCIPAL ==========
+        function dibujar() {
+            // Suavizamos el movimiento del ratón
+            mouseX += (targetX - mouseX) * suavizado;
+            mouseY += (targetY - mouseY) * suavizado;
+
+            // Fondo base (cielo) - casi sin movimiento
+            const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            grad.addColorStop(0, "#1a9b9b");
+            grad.addColorStop(0.55, "#148484");
+            grad.addColorStop(1, "#0d5c5c");
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // ===== CAPA 1: Nubes (muy lejanas) =====
+            dibujarCapa(0.25, () => {
+                dibujarNube(140, 70, 1.4, 0.9);
+                dibujarNube(380, 50, 1.1, 0.85);
+                dibujarNube(680, 65, 1.7, 0.9);
+                dibujarNube(880, 85, 1.0, 0.8);
+            });
+
+            // ===== CAPA 2: Montañas y pirámides azules lejanas =====
+            dibujarCapa(0.45, () => {
+                dibujarPiramide2D(60, 310, 100, 130, "#3a5a8a");
+                dibujarPiramide2D(150, 320, 80, 110, "#3a5a8a");
+                dibujarPiramide2D(600, 300, 120, 150, "#3a5a8a");
+                dibujarPiramide2D(740, 315, 90, 120, "#3a5a8a");
+                dibujarPiramide2D(870, 330, 70, 100, "#3a5a8a");
+            });
+
+            // ===== CAPA 3: Pirámides beige principales =====
+            dibujarCapa(0.7, () => {
+                dibujarPiramideTruncada(40, 340, 150, 180, 45, "#e8b86d");
+                dibujarPiramideTruncada(210, 320, 115, 155, 35, "#e0a85a");
+                dibujarPiramideTruncada(750, 355, 80, 100, 28, "#d4a05a");
+                dibujarPiramideTruncada(840, 345, 100, 120, 32, "#e0a85a");
+            });
+
+            // ===== CAPA 4: Árboles / arbustos =====
+            dibujarCapa(0.95, () => {
+                // Capa oscura
+                dibujarArbusto(90, 370, 85, "#2d6b5a");
+                dibujarArbusto(200, 380, 100, "#2d6b5a");
+                dibujarArbusto(320, 365, 75, "#2d6b5a");
+                dibujarArbusto(480, 385, 115, "#2d6b5a");
+                dibujarArbusto(620, 370, 90, "#2d6b5a");
+                dibujarArbusto(750, 380, 105, "#2d6b5a");
+                dibujarArbusto(900, 365, 80, "#2d6b5a");
+
+                // Capa más clara encima
+                dibujarArbusto(150, 400, 65, "#3a8a6e");
+                dibujarArbusto(280, 410, 75, "#3a8a6e");
+                dibujarArbusto(540, 405, 85, "#3a8a6e");
+                dibujarArbusto(680, 400, 70, "#3a8a6e");
+                dibujarArbusto(820, 410, 80, "#3a8a6e");
+            });
+
+            // ===== CAPA 5: Muro y flores (más cercanos) =====
+            dibujarCapa(1.25, () => {
+                // Muro
+                ctx.fillStyle = "#3a3a3a";
+                ctx.fillRect(-50, 460, canvas.width + 100, 120);
+
+                // Ladrillos
+                ctx.strokeStyle = "#2a2a2a";
+                ctx.lineWidth = 2;
+                for (let y = 460; y < 580; y += 30) {
+                    for (let x = -50; x < canvas.width + 50; x += 58) {
+                        ctx.strokeRect(x + (Math.floor(y / 30) % 2 === 0 ? 0 : 29), y, 58, 30);
+                    }
+                }
+
+                // Flores
+                dibujarFlor(50, 510);
+                dibujarFlor(950, 510);
+            });
+
+            // Viñeta sutil para dar más sensación de profundidad
+            const vignette = ctx.createRadialGradient(
+                canvas.width / 2, canvas.height / 2, canvas.height * 0.3,
+                canvas.width / 2, canvas.height / 2, canvas.height * 0.85
+            );
+            vignette.addColorStop(0, "rgba(0,0,0,0)");
+            vignette.addColorStop(1, "rgba(0,0,0,0.35)");
+            ctx.fillStyle = vignette;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            requestAnimationFrame(dibujar);
+        }
+
+        dibujar();
+    </script>
+</body>
+</html>
